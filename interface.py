@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QWidget, QLabel, QComboBox
+from PyQt5.QtWidgets import QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QLabel, QComboBox, QPushButton
 from PyQt5.QtCore import Qt, pyqtSignal
 import pyqtgraph as pg
 
@@ -8,70 +8,130 @@ class SynthInterface(QMainWindow):
     close_signal = pyqtSignal()
 
     def __init__(self):
-        """
-        1. Appelle le constructeur parent QMainWindow.
-        2. Définit le titre de la fenêtre.
-        3. Définit la taille de la fenêtre.
-        4. Initialise l'interface utilisateur en appelant self.init_ui().
-        """
         super().__init__()
-        self.setWindowTitle("Synthétiseur Temps Réel")
-        self.resize(800, 400)
+        self.setWindowTitle("Synthétiseur POO - Prototype")
+        self.resize(900, 500)
+        
+        # Dictionnaire pour stocker nos boutons de touches 
+        self.key_buttons = {}
         self.init_ui()
 
     def init_ui(self):
-        """
-        1. Crée un widget central et le définit comme widget principal de la fenêtre.
-        2. Crée un layout vertical pour organiser les éléments.
-        3. Crée une combo box pour choisir la forme d'onde et désactive le focus clavier dessus.
-        4. Crée un label d'instructions pour l'utilisateur.
-        5. Ajoute la combo box et le label au layout.
-        6. Crée un widget graphique pour l'affichage du signal (oscilloscope).
-        7. Ajoute ce widget au layout et crée une courbe jaune pour l'affichage du signal.
-        """
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        # 1. Widget Central et Layout Principal
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
+        # 2. Choix de la forme d'onde
         self.combo = QComboBox()
         self.combo.addItems(["Sinus", "Carré", "Dents de scie"])
-        self.combo.setFocusPolicy(Qt.NoFocus)
+        self.combo.setFocusPolicy(Qt.NoFocus) #  pour que le clavier serve au piano 
+        main_layout.addWidget(QLabel("Forme d'onde :"))
+        main_layout.addWidget(self.combo)
 
-        self.label_note = QLabel("Maintenez A Z E R T Y U")
-
-        layout.addWidget(self.combo)
-        layout.addWidget(self.label_note)
-
+        # 3. Visualisation (L'Oscilloscope)
         self.win_plt = pg.GraphicsLayoutWidget()
-        layout.addWidget(self.win_plt)
-        self.curve = self.win_plt.addPlot().plot(pen='y')
+        main_layout.addWidget(self.win_plt)
+        self.curve = self.win_plt.addPlot(title="Signal Temps Réel").plot(pen='y')
+        # On fixe l'échelle verticale pour éviter que ça bouge trop
+        self.win_plt.getItem(0,0).setYRange(-33000, 33000) 
+
+      # --- 4. Le Clavier Visuel (Simple et Collé) ---
+        keys_layout = QHBoxLayout()
+        keys_layout.setSpacing(2) # Espace très fin entre les touches
+        
+        # Ordre chromatique pour placer les noires entre les blanches
+        # Q=Do, Z=Do#, S=Ré, E=Ré#, D=Mi, F=Fa, T=Fa#, G=Sol, Y=Sol#, H=La, U=La#, J=Si, K=Do, O=Do#, L=Ré, P=Ré#
+        sequence = ["Q", "Z", "S", "E", "D", "F", "T", "G", "Y", "H", "U", "J", "K", "O", "L", "P"]
+        black_keys = ["Z", "E", "T", "Y", "U", "O", "P"]
+
+        for note in sequence:
+            btn = QPushButton(note)
+            btn.setEnabled(False)
+            btn.setFixedWidth(50) # Même taille pour tout le monde
+            
+            # Définition du style selon si c'est une noire ou une blanche
+            if note in black_keys:
+                style = "background-color: black; color: white; border: 1px solid gray; height: 100px; font-weight: bold;"
+            else:
+                style = "background-color: white; color: black; border: 1px solid black; height: 100px; font-weight: bold;"
+            
+            btn.setStyleSheet(style)
+            
+            # ASTUCE POO : On enregistre son style "normal" dans une propriété personnalisée
+            btn.setProperty("original_style", style)
+            
+            self.key_buttons[note] = btn
+            keys_layout.addWidget(btn)
+        
+        main_layout.addLayout(keys_layout)
+
+    def get_wave_type(self):
+        """Méthode pour que le 'Main' puisse savoir quelle onde est choisie"""
+        return self.combo.currentText()
+
+    def update_visual_key(self, key_code, pressed=True):
+        """Change la couleur de la touche et la remet à l'état initial"""
+        # On récupère le nom de la touche (ex: "Q")
+        char = chr(key_code).upper() if 0 <= key_code <= 255 else None
+        
+        if char in self.key_buttons:
+            btn = self.key_buttons[char]
+            if pressed:
+                # Quand on appuie : elle devient orange
+                btn.setStyleSheet("background-color: orange; color: black; border: 1px solid black; height: 100px; font-weight: bold;")
+            else:
+                # Quand on relâche : on récupère le style qu'on avait stocké au début !
+                original = btn.property("original_style")
+                btn.setStyleSheet(original)
 
     def keyPressEvent(self, event):
-        """
-        1. Émet le signal key_pressed avec la touche pressée (event.key()).
-        """
-        self.key_pressed.emit(event.key())
+        if not event.isAutoRepeat():
+            self.update_visual_key(event.key(), True)
+            self.key_pressed.emit(event.key())
 
     def keyReleaseEvent(self, event):
-        """
-        1. Vérifie que l'événement n'est pas une répétition automatique de la touche.
-        2. Si vrai, émet le signal key_released avec la touche relâchée (event.key()).
-        """
         if not event.isAutoRepeat():
+            self.update_visual_key(event.key(), False)
             self.key_released.emit(event.key())
 
-    def update_display(self, t, data, text):
-        """
-        1. Met à jour la courbe affichée avec les données temporelles t et les valeurs data.
-        2. Met à jour le texte du label avec la chaîne text (fréquences ou état).
-        """
+    def update_display(self, t, data, freqs_list):
+        """Met à jour le graphique"""
         self.curve.setData(t, data)
-        self.label_note.setText(text)
 
     def closeEvent(self, event):
-        """
-        1. Émet le signal close_signal pour prévenir la fermeture de l'application.
-        2. Accepte l'événement de fermeture (ferme la fenêtre proprement).
-        """
         self.close_signal.emit()
         event.accept()
+        
+   """     
+if __name__ == "__main__":
+    import sys
+    import numpy as np
+    from PyQt5.QtWidgets import QApplication
+
+    # 1. Création de l'application
+    app = QApplication(sys.argv)
+    
+    # 2. Instanciation de TON interface
+    fenetre = SynthInterface()
+    fenetre.show()
+
+    # 3. Simulation de données pour vérifier l'oscilloscope
+    # On crée une sinusoïde factice
+    t = np.linspace(0, 0.05, 1000)
+    data = 15000 * np.sin(2 * np.pi * 440 * t) 
+    
+    # On appelle ta méthode pour voir si le dessin s'affiche
+    fenetre.update_display(t, data, "Test Oscilloscope")
+
+    # 4. Lancement de la boucle d'événements
+    sys.exit(app.exec_())        
+        
+    # Petite fonction pour imprimer dans la console quand on appuie sur une touche
+    def test_touche(key):
+        print(f"Signal reçu ! Touche pressée : {key}")
+
+    # On connecte le signal de ton interface à notre fonction de test
+    fenetre.key_pressed.connect(test_touche)  
+        
+        
